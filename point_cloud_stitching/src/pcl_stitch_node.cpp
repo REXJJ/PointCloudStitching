@@ -54,13 +54,6 @@
 
 #include <pcl/visualization/pcl_visualizer.h>
 
-//convenient typedefs
-typedef pcl::PointXYZ PointT;
-typedef pcl::PointCloud<PointT> PointCloud;
-typedef pcl::PointNormal PointNormalT;
-typedef pcl::PointCloud<PointNormalT> PointCloudWithNormals;
-
-
 #include <Eigen/Dense>
 #include <Eigen/Core>
 
@@ -74,8 +67,8 @@ typedef pcl::PointCloud<PointNormalT> PointCloudWithNormals;
 #include "point_cloud_utilities/pcl_utilities.hpp"
 
 using namespace std;
-
 using namespace fusion;
+using namespace pcl;
 
 ros::Publisher pub;
 
@@ -84,6 +77,30 @@ static const std::double_t DEFAULT_MINIMUM_TRANSLATION = 0.1;
 
 bool SAVE=false;
 bool SAVING_DONE=false;
+
+std::double_t distance_moved=0.0;
+
+class MyPointRepresentation : public pcl::PointRepresentation <PointNormal>
+{
+  using pcl::PointRepresentation<PointNormal>::nr_dimensions_;
+public:
+  MyPointRepresentation ()
+  {
+    // Define the number of dimensions
+    nr_dimensions_ = 4;
+  }
+
+  // Override the copyToFloatArray method to define our feature vector
+  virtual void copyToFloatArray (const PointNormal &p, float * out) const
+  {
+    // < x, y, z, curvature >
+    out[0] = p.x;
+    out[1] = p.y;
+    out[2] = p.z;
+    out[3] = p.curvature;
+  }
+};
+
 
 PclFusion::PclFusion(ros::NodeHandle& nh,const std::string& fusion_frame,vector<double>& box)
   : robot_tform_listener_(tf_buffer_)
@@ -130,9 +147,23 @@ void PclFusion::onReceivedPointCloud(const sensor_msgs::PointCloud2ConstPtr& clo
     for(auto point:cloud_transformed)
         if( point.z>bounding_box[4] && point.z<bounding_box[5] )
             temp.push_back(point);
-    combined_pcl=combined_pcl+temp;//Combining the point clouds. TODO: Use ICP instead...
-    combined_pcl=PCLUtilities::downsample(combined_pcl); 
+/*    combined_pcl=combined_pcl+temp;//Combining the point clouds. TODO: Use ICP instead...
+    combined_pcl=PCLUtilities::downsample(combined_pcl); */
 
+
+    if(combined_pcl.points.size())
+    {
+        pcl::PointCloud<pcl::PointXYZ>::Ptr output (new PointCloud<PointXYZ>);
+        Eigen::Matrix4f final_transform = Eigen::Matrix4f::Identity();
+        pairAlign (temp.makeShared(),combined_pcl.makeShared(),output,final_transform,true);
+        std::cout<<"Reached Here.."<<std::endl;
+        combined_pcl.clear();
+        for(auto x:output->points)
+            combined_pcl.points.push_back(x);
+    }
+
+    if(combined_pcl.points.size()==0)
+        combined_pcl+=temp;
 
     fusion_frame_T_camera_prev_=fusion_frame_T_camera;
     
@@ -182,13 +213,106 @@ void PclFusion::chatterCallback(const std_msgs::String::ConstPtr& msg)
   * \param output the resultant aligned source PointCloud
   * \param final_transform the resultant transform between source and target
   */
-void PclFusion::pairAlign (const PointCloud::Ptr cloud_src, const PointCloud::Ptr cloud_tgt, PointCloud::Ptr output, Eigen::Matrix4f &final_transform, bool downsample = false)
+void PclFusion::pairAlign (const pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_src, const pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_tgt, pcl::PointCloud<pcl::PointXYZ>::Ptr output, Eigen::Matrix4f &final_transform, bool downsample = false)
 {
+
+  PointCloud<PointXYZ>::Ptr src (new PointCloud<PointXYZ>);
+  PointCloud<PointXYZ>::Ptr tgt (new PointCloud<PointXYZ>);
+  pcl::VoxelGrid<PointXYZ> grid;
+  if (downsample)
+  {
+    grid.setLeafSize (0.05, 0.05, 0.05);
+    grid.setInputCloud (cloud_src);
+    grid.filter (*src);
+    grid.setInputCloud (cloud_tgt);
+    grid.filter (*tgt);
+  }
+  else
+  {
+    src = cloud_src;
+    tgt = cloud_tgt;
+  }
+
+  // Compute surface normals and curvature
+  PointCloud<PointNormal>::Ptr points_with_normals_src (new PointCloud<PointNormal>);
+  PointCloud<PointNormal>::Ptr points_with_normals_tgt (new PointCloud<PointNormal>);
+
+  pcl::NormalEstimation<PointXYZ, PointNormal> norm_est;
+  pcl::search::KdTree<PointXYZ>::Ptr tree (new pcl::search::KdTree<PointXYZ> ());
+  norm_est.setSearchMethod (tree);
+  norm_est.setKSearch (30);
+  
+  norm_est.setInputCloud (src);
+  norm_est.compute (*points_with_normals_src);
+  pcl::copyPointCloud (*src, *points_with_normals_src);
+
+  norm_est.setInputCloud (tgt);
+  norm_est.compute (*points_with_normals_tgt);
+  pcl::copyPointCloud (*tgt, *points_with_normals_tgt);
+
+
+  // Instantiate our custom point representation (defined above) ...
+  MyPointRepresentation point_representation;
+  // ... and weight the 'curvature' dimension so that it is balanced against x, y, and z
+  float alpha[4] = {1.0, 1.0, 1.0, 1.0};
+  point_representation.setRescaleValues (alpha);
+
   //
-  // Downsample for consistency and speed
-  // \note enable this for large datasets
- 
- }
+  // Align
+  pcl::IterativeClosestPointNonLinear<PointNormal, PointNormal> reg;
+  reg.setTransformationEpsilon (1e-6);
+  // Set the maximum distance between two correspondences (src<->tgt) to 10cm
+  // Note: adjust this based on the size of your datasets
+  reg.setMaxCorrespondenceDistance (distance_moved); //TODO: Need to update this later.... 
+  // Set the point representation
+  reg.setPointRepresentation (boost::make_shared<const MyPointRepresentation> (point_representation));
+
+  reg.setInputSource (points_with_normals_src);
+  reg.setInputTarget (points_with_normals_tgt);
+
+// Run the same optimization in a loop and visualize the results
+  Eigen::Matrix4f Ti = Eigen::Matrix4f::Identity (), prev, targetToSource;
+  pcl::PointCloud<PointNormal>::Ptr reg_result = points_with_normals_src;
+  reg.setMaximumIterations (2);
+  for (int i = 0; i < 30; ++i)
+  {
+    PCL_INFO ("Iteration Nr. %d.\n", i);
+
+    // save cloud for visualization purpose
+    points_with_normals_src = reg_result;
+
+    // Estimate
+    reg.setInputSource (points_with_normals_src);
+    reg.align (*reg_result);
+
+        //accumulate transformation between each Iteration
+    Ti = reg.getFinalTransformation () * Ti;
+
+        //if the difference between this transformation and the previous one
+        //is smaller than the threshold, refine the process by reducing
+        //the maximal correspondence distance
+    if (std::abs ((reg.getLastIncrementalTransformation () - prev).sum ()) < reg.getTransformationEpsilon ())
+      reg.setMaxCorrespondenceDistance (reg.getMaxCorrespondenceDistance () - 0.001);
+    
+    prev = reg.getLastIncrementalTransformation ();
+
+    // visualize current state
+    // showCloudsRight(points_with_normals_tgt, points_with_normals_src);
+  }
+  targetToSource = Ti.inverse();
+
+  std::cout<<"Before transforming cloud"<<std::endl;
+
+  //
+  // Transform target back in source frame
+  pcl::transformPointCloud (*cloud_tgt, *output, targetToSource);
+
+  //add the source to the transformed target
+   *output += *cloud_src;
+   final_transform = targetToSource;
+   std::cout<<"End of the align function..."<<std::endl;
+
+}
 
 int main(int argc, char** argv)
 {

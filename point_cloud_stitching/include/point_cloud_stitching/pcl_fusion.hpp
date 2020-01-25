@@ -44,11 +44,6 @@
 #include <iostream>
 #include <cmath>
 
-typedef pcl::PointXYZ PointT;
-typedef pcl::PointCloud<PointT> PointCloud;
-typedef pcl::PointNormal PointNormalT;
-typedef pcl::PointCloud<PointNormalT> PointCloudWithNormals;
-
 namespace fusion
 {
 	/**
@@ -61,7 +56,7 @@ namespace fusion
 
 	private:
 		void onReceivedPointCloud(const sensor_msgs::PointCloud2ConstPtr& cloud_in);
-		void pairAlign (const PointCloud::Ptr cloud_src, const PointCloud::Ptr cloud_tgt, PointCloud::Ptr output, Eigen::Matrix4f &final_transform, bool downsample = false);
+		void pairAlign (const pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_src, const pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_tgt, pcl::PointCloud<pcl::PointXYZ>::Ptr output, Eigen::Matrix4f &final_transform, bool downsample);
 		// bool onGenerateMesh(point_cloud_stitching::GenerateMeshRequest& req, point_cloud_stitching::GenerateMeshResponse& res);
 		// bool onReset(std_srvs::TriggerRequest& req, std_srvs::TriggerResponse& res);
 		// bool onUpdateParams(yak_ros_msgs::UpdateKinFuParamsRequest& req, yak_ros_msgs::UpdateKinFuParamsResponse& res);
