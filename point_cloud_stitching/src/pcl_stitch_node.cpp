@@ -46,7 +46,9 @@
 
 
 #include <pcl/filters/filter.h>
-
+#include <pcl_ros/transforms.h>
+#include <pcl/filters/extract_indices.h>
+#include <pcl/surface/mls.h>
 
 #include <pcl/registration/icp.h>
 #include <pcl/registration/icp_nl.h>
@@ -101,6 +103,59 @@ public:
   }
 };
 
+void cleanPointCloud(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_in, pcl::PointCloud<pcl::PointXYZ>::Ptr cleaned_cloud)
+{
+    pcl::PointCloud<pcl::PointXYZ> cloud_voxelized;
+    //voxelize the combined cloud so we have some semi clean data that isn't insanely large
+
+    std::cout<<"Voxelizing the points..."<<std::endl;
+
+    pcl::VoxelGrid<pcl::PointXYZ> voxelSampler;
+    voxelSampler.setInputCloud(cloud_in);
+    voxelSampler.setLeafSize(0.01,0.01,0.01);
+    voxelSampler.filter(cloud_voxelized);
+
+    std::cout<<"MLS..."<<std::endl;
+
+    // ROS_INFO("Performing MLS on the multisampled clouds...");
+    // resample the data so we get normals that are reasonable using MLS
+    pcl::search::KdTree<pcl::PointXYZ>::Ptr tree(new pcl::search::KdTree<pcl::PointXYZ>);
+    // next perform MLS to average out the Z values and give us something reasonable looking
+    pcl::PointCloud<pcl::PointNormal> mls_points;
+    pcl::MovingLeastSquares<pcl::PointXYZ,pcl::PointNormal> mls;
+    mls.setComputeNormals(true);
+    mls.setInputCloud(cloud_voxelized.makeShared());
+    mls.setPolynomialOrder(3);
+    mls.setSearchMethod(tree);
+    mls.setSearchRadius(0.01*10.0); // made this 1 order of magnitude bigger than the voxel size
+    mls.setSqrGaussParam(mls.getSearchRadius()*mls.getSearchRadius()); // usually set this to be square of the search radius
+    mls.process(mls_points);
+
+    pcl::PointCloud<pcl::PointNormal> filtered_pcl;  
+    //do a filter to get rid of any noisey points.
+    // ROS_INFO("Removing statistical outliers...");
+    // remove statistical outliers
+
+    std::cout<<"Statistical Filtering..."<<std::endl;
+
+    pcl::StatisticalOutlierRemoval<pcl::PointNormal> statFilter;
+    statFilter.setInputCloud(mls_points.makeShared());
+    statFilter.setMeanK(10);
+    statFilter.setStddevMulThresh(0.2);
+    // copy the filtered data into cloudfiltered
+    statFilter.filter(filtered_pcl);
+
+    std::cout<<"Reached Here..."<<std::endl;
+
+    for(auto point:filtered_pcl.points)
+    {
+      PointXYZ pt={point.x,point.y,point.z};
+      cleaned_cloud->points.push_back(pt);
+    }
+
+    std::cout<<"End of Function.."<<std::endl;
+
+  }
 
 PclFusion::PclFusion(ros::NodeHandle& nh,const std::string& fusion_frame,vector<double>& box)
   : robot_tform_listener_(tf_buffer_)
@@ -110,7 +165,7 @@ PclFusion::PclFusion(ros::NodeHandle& nh,const std::string& fusion_frame,vector<
 {  // Subscribe to point cloud
     point_cloud_sub_ = nh.subscribe("input_point_cloud", 1, &PclFusion::onReceivedPointCloud,this);
     saving_message_sub = nh.subscribe("/save_pcd_file", 1000, &PclFusion::chatterCallback,this);
-    publish_cloud = nh.advertise<sensor_msgs::PointCloud2> ("fused_points", 1);
+    publish_cloud = nh.advertise<sensor_msgs::PointCloud2> ("pcl_stitch_node/fused_points", 1);
 }
 
 void PclFusion::onReceivedPointCloud(const sensor_msgs::PointCloud2ConstPtr& cloud_in)
@@ -179,8 +234,9 @@ void PclFusion::onReceivedPointCloud(const sensor_msgs::PointCloud2ConstPtr& clo
     if(SAVE&&!SAVING_DONE)
     {
         PCLUtilities::pclToXYZ<PointXYZ>(combined_pcl,"/home/rex/Desktop/REX_WORK_SPACE/Test_WS/REX/CGAL/Data/test.xyz");
+        PCLUtilities::PclToPcd<PointXYZ>("/home/rex/Desktop/REX_WORK_SPACE/Test_WS/REX/CGAL/Data/test.pcd",combined_pcl);
         std::cout<<"Fusion Done..."<<std::endl;
-    	SAVING_DONE=true;
+    	  SAVING_DONE=true;
     }
 
     // cout<<"SAVE : "<<SAVE<<" SAVING_DONE : "<<SAVING_DONE<<std::endl;
@@ -218,20 +274,25 @@ void PclFusion::pairAlign (const pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_src, 
 
   PointCloud<PointXYZ>::Ptr src (new PointCloud<PointXYZ>);
   PointCloud<PointXYZ>::Ptr tgt (new PointCloud<PointXYZ>);
-  pcl::VoxelGrid<PointXYZ> grid;
+  // pcl::VoxelGrid<PointXYZ> grid;
+  std::cout<<"Cleaning Point Clouds..."<<std::endl;
   if (downsample)
   {
-    grid.setLeafSize (0.05, 0.05, 0.05);
-    grid.setInputCloud (cloud_src);
-    grid.filter (*src);
-    grid.setInputCloud (cloud_tgt);
-    grid.filter (*tgt);
+    // grid.setLeafSize (0.01, 0.01, 0.01);
+    // grid.setInputCloud (cloud_src);
+    // grid.filter (*src);
+    // grid.setInputCloud (cloud_tgt);
+    // grid.filter (*tgt);
+
+    cleanPointCloud(cloud_src,src);
+    cleanPointCloud(cloud_tgt,tgt);
   }
   else
   {
     src = cloud_src;
     tgt = cloud_tgt;
   }
+  std::cout<<"Computing Normals..."<<std::endl;
 
   // Compute surface normals and curvature
   PointCloud<PointNormal>::Ptr points_with_normals_src (new PointCloud<PointNormal>);
@@ -240,7 +301,7 @@ void PclFusion::pairAlign (const pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_src, 
   pcl::NormalEstimation<PointXYZ, PointNormal> norm_est;
   pcl::search::KdTree<PointXYZ>::Ptr tree (new pcl::search::KdTree<PointXYZ> ());
   norm_est.setSearchMethod (tree);
-  norm_est.setKSearch (30);
+  norm_est.setKSearch (128);
   
   norm_est.setInputCloud (src);
   norm_est.compute (*points_with_normals_src);
@@ -256,6 +317,9 @@ void PclFusion::pairAlign (const pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_src, 
   // ... and weight the 'curvature' dimension so that it is balanced against x, y, and z
   float alpha[4] = {1.0, 1.0, 1.0, 1.0};
   point_representation.setRescaleValues (alpha);
+
+  std::cout<<"Aligning Point Clouds..."<<std::endl;
+
 
   //
   // Align
@@ -273,8 +337,8 @@ void PclFusion::pairAlign (const pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_src, 
 // Run the same optimization in a loop and visualize the results
   Eigen::Matrix4f Ti = Eigen::Matrix4f::Identity (), prev, targetToSource;
   pcl::PointCloud<PointNormal>::Ptr reg_result = points_with_normals_src;
-  reg.setMaximumIterations (2);
-  for (int i = 0; i < 30; ++i)
+  reg.setMaximumIterations (8);
+  for (int i = 0; i < 60; ++i)
   {
     PCL_INFO ("Iteration Nr. %d.\n", i);
 

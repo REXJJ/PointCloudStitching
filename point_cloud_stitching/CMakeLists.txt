@@ -222,3 +222,4 @@ endfunction()
 
 create_exe(pcl_stitch_node)
 create_exe(chatter)
+create_exe(pcl_filter_node)
