@@ -200,7 +200,7 @@ void PclFusion::onReceivedPointCloud(const sensor_msgs::PointCloud2ConstPtr& clo
     }
     pcl::transformPointCloud (cloud, cloud_transformed, fusion_frame_T_camera);
     for(auto point:cloud_transformed)
-        if(point.z>bounding_box[4] && point.z<bounding_box[5] )
+        if(point.x>bounding_box[0] && point.x<bounding_box[1] && point.y>bounding_box[2] && point.y<bounding_box[3] && point.z>bounding_box[4] && point.z<bounding_box[5] )
             temp.push_back(point);
 /*    combined_pcl=combined_pcl+temp;//Combining the point clouds. TODO: Use ICP instead...
     combined_pcl=PCLUtilities::downsample(combined_pcl); */
@@ -298,7 +298,7 @@ void PclFusion::pairAlign (const pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_src, 
   pcl::NormalEstimation<PointXYZ, PointNormal> norm_est;
   pcl::search::KdTree<PointXYZ>::Ptr tree (new pcl::search::KdTree<PointXYZ> ());
   norm_est.setSearchMethod (tree);
-  norm_est.setKSearch (128);
+  norm_est.setKSearch (256);
   
   norm_est.setInputCloud (src);
   norm_est.compute (*points_with_normals_src);
@@ -321,11 +321,14 @@ void PclFusion::pairAlign (const pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_src, 
   //
   // Align
   pcl::IterativeClosestPointNonLinear<PointNormal, PointNormal> reg;
-  reg.setTransformationEpsilon (1e-6);
-  // Set the maximum distance between two correspondences (src<->tgt) to 10cm
+  reg.setTransformationEpsilon (1e-7);
+  // Set the maximum distance between two correspondences (src<->tgt)
   // Note: adjust this based on the size of your datasets
   reg.setMaxCorrespondenceDistance (distance_moved); //TODO: Need to update this later.... 
   // Set the point representation
+  // reg.setRANSACOutlierRejectionThreshold(0.001);
+  // reg.setEuclideanFitnessEpsilon (1);
+
   reg.setPointRepresentation (boost::make_shared<const MyPointRepresentation> (point_representation));
 
   reg.setInputSource (points_with_normals_src);
@@ -334,8 +337,7 @@ void PclFusion::pairAlign (const pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_src, 
 // Run the same optimization in a loop and visualize the results
   Eigen::Matrix4f Ti = Eigen::Matrix4f::Identity (), prev, targetToSource;
   pcl::PointCloud<PointNormal>::Ptr reg_result = points_with_normals_src;
-  reg.setMaximumIterations (8);
-
+  reg.setMaximumIterations (30);
   for (int i = 0; i < 60; ++i)
   {
     PCL_INFO ("Iteration Nr. %d.\n", i);
