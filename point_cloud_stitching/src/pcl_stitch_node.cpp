@@ -79,6 +79,7 @@ static const std::double_t DEFAULT_MINIMUM_TRANSLATION = 0.1;
 
 bool SAVE=false;
 bool SAVING_DONE=false;
+bool USE_ICP=false;
 
 std::double_t distance_moved=0.0;
 
@@ -204,8 +205,7 @@ void PclFusion::onReceivedPointCloud(const sensor_msgs::PointCloud2ConstPtr& clo
             temp.push_back(point);
 /*    combined_pcl=combined_pcl+temp;//Combining the point clouds. TODO: Use ICP instead...
     combined_pcl=PCLUtilities::downsample(combined_pcl); */
-
-
+          
     if(combined_pcl.points.size())
     {
         pcl::PointCloud<pcl::PointXYZ>::Ptr output (new PointCloud<PointXYZ>);
@@ -301,7 +301,7 @@ void PclFusion::pairAlign (const pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_src, 
   pcl::NormalEstimation<PointXYZ, PointNormal> norm_est;
   pcl::search::KdTree<PointXYZ>::Ptr tree (new pcl::search::KdTree<PointXYZ> ());
   norm_est.setSearchMethod (tree);
-  norm_est.setKSearch (128);
+  norm_est.setKSearch (512);
   
   norm_est.setInputCloud (src);
   norm_est.compute (*points_with_normals_src);
@@ -324,10 +324,12 @@ void PclFusion::pairAlign (const pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_src, 
   //
   // Align
   pcl::IterativeClosestPointNonLinear<PointNormal, PointNormal> reg;
-  reg.setTransformationEpsilon (1e-6);
+  reg.setTransformationEpsilon (1e-9);
   // Set the maximum distance between two correspondences (src<->tgt) to 10cm
   // Note: adjust this based on the size of your datasets
   reg.setMaxCorrespondenceDistance (distance_moved); //TODO: Need to update this later.... 
+  reg.setEuclideanFitnessEpsilon (1);
+  reg.setRANSACOutlierRejectionThreshold (0.001);
   // Set the point representation
   reg.setPointRepresentation (boost::make_shared<const MyPointRepresentation> (point_representation));
 
@@ -337,7 +339,7 @@ void PclFusion::pairAlign (const pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_src, 
 // Run the same optimization in a loop and visualize the results
   Eigen::Matrix4f Ti = Eigen::Matrix4f::Identity (), prev, targetToSource;
   pcl::PointCloud<PointNormal>::Ptr reg_result = points_with_normals_src;
-  reg.setMaximumIterations (8);
+  reg.setMaximumIterations (60);
   for (int i = 0; i < 60; ++i)
   {
     PCL_INFO ("Iteration Nr. %d.\n", i);

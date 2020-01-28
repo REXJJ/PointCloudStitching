@@ -9,5 +9,7 @@
     <remap from="~input_point_cloud" to="/camera/depth/color/points" />
     <param name="fusion_frame" value="world"/>
     <rosparam param="bounding_box">[0.90,1.20,-0.19,0.60,0.17,0.50]</rosparam>
+    <!-- <rosparam param="bounding_box">[-100.0,100.0,-100.0,100.0,-100.0,100.0]</rosparam> -->
+
   </node>
 </launch>
