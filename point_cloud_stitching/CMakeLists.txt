@@ -212,12 +212,14 @@ find_package(PCL 1.7 REQUIRED)
 include_directories(${PCL_INCLUDE_DIRS})
 link_directories(${PCL_LIBRARY_DIRS})
 add_definitions(${PCL_DEFINITIONS})
+find_package(OpenCV REQUIRED)
+include_directories(${OpenCV_INCLUDE_DIRS})
 
 
 function(create_exe firstfile )
 add_executable(${firstfile} src/${firstfile}.cpp)
 target_link_libraries(${firstfile} ${catkin_LIBRARIES})
-target_link_libraries(${firstfile} ${PCL_LIBRARIES})
+target_link_libraries(${firstfile} ${PCL_LIBRARIES} ${OpenCV_LIBS})
 endfunction()
 
 create_exe(pcl_stitch_node)

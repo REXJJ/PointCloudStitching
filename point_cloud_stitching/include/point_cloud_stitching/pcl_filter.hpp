@@ -37,12 +37,17 @@
 
 #include <Eigen/Dense>
 #include <Eigen/Core>
+#include <cv.h>
+#include <highgui.h>
 
 /***********************************************/
 //STANDARD HEADERS
 /************************************************/
 #include <iostream>
 #include <cmath>
+
+using namespace std;
+using namespace cv;
 
 namespace filter
 {
@@ -52,15 +57,31 @@ namespace filter
 	class PclFilter
 	{
 	public:
-		PclFilter(ros::NodeHandle& nh);
+		PclFilter(ros::NodeHandle& nh,vector<string> &topics);
+	    Mat color_image,depth_image,combined_depth_image;
+	    Eigen::MatrixXd combined_depth_image_matrix,useful_pixels;
+	    bool color_done,depth_done,camera_done;
+	    // ros::NodeHandle nh;
+	    Eigen::VectorXd K;
+	    double fx,cx,fy,cy;
+	    std::string frame_id;
+	    pcl::PointCloud<pcl::PointXYZRGB> makePointCloud();
 
 	private:
 		void onReceivedRawPointCloud(const sensor_msgs::PointCloud2ConstPtr& cloud_in);
-		// bool onGenerateMesh(point_cloud_stitching::GenerateMeshRequest& req, point_cloud_stitching::GenerateMeshResponse& res);
-		// bool onReset(std_srvs::TriggerRequest& req, std_srvs::TriggerResponse& res);
-		// bool onUpdateParams(yak_ros_msgs::UpdateKinFuParamsRequest& req, yak_ros_msgs::UpdateKinFuParamsResponse& res);
+
+	    void cameraInfoCb(const sensor_msgs::CameraInfoConstPtr& camMsg);
+
+		void colorImageCb(const sensor_msgs::ImageConstPtr& msg);
+
+		void depthImageCb(const sensor_msgs::ImageConstPtr& msg);
+
+
+
 		/** @brief Subscriber that listens to incoming point clouds */
 		ros::Subscriber point_cloud_sub_;
+
+        ros::Subscriber image_sub_, depth_sub_,info_sub_;
 
 		ros::Publisher publish_cloud;
 
@@ -68,6 +89,11 @@ namespace filter
 
 		pcl::PointCloud<pcl::PointXYZ> combined_point_cloud;
 
+		ros::ServiceServer capture_point_cloud_srv;
+
+		bool capture;
+
+		bool onCapturePointCloud(std_srvs::TriggerRequest& req, std_srvs::TriggerResponse& res);
 	};
 }  // namespace filter
 

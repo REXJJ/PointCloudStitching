@@ -68,16 +68,15 @@ using namespace pcl;
 /***************************************************/
 //Global Variables
 /***************************************************/
+
 ros::Publisher pub;
 static const std::double_t DEFAULT_MINIMUM_TRANSLATION = 0.1;
-const bool USE_ICP = false;
+const bool USE_ICP = true;
 std::double_t distance_moved = 0.0;
 const double leaf_size = 0.01;
 const int neighbors = 512;
 const int max_icp_iterations = 60;
 const int max_rounds = 100;
-bool fuse_point_cloud = true;
-bool continuous_mode = true;
 
 class MyPointRepresentation : public pcl::PointRepresentation <PointNormal>
 {
@@ -162,9 +161,6 @@ PclFusion::PclFusion(ros::NodeHandle& nh,const std::string& fusion_frame,vector<
 {  // Subscribe to point cloud
     point_cloud_sub_ = nh.subscribe("input_point_cloud", 1, &PclFusion::onReceivedPointCloud,this);
     save_point_cloud = nh.advertiseService("/pcl_fusion_node/save_point_cloud", &PclFusion::savePointCloud, this);
-    reset_fusion_service_=nh.advertiseService("/pcl_fusion_node/reset",&PclFusion::resetFusion, this);
-    capture_point_cloud = nh.advertiseService("/pcl_fusion_node/capture_point_cloud",&PclFusion::capturePointCloud,this);
-
     publish_cloud = nh.advertise<sensor_msgs::PointCloud2> ("pcl_fusion_node/fused_points", 1);
 }
 
@@ -192,15 +188,6 @@ void PclFusion::onReceivedPointCloud(const sensor_msgs::PointCloud2ConstPtr& clo
     std::double_t motion_mag = (fusion_frame_T_camera.inverse() * fusion_frame_T_camera_prev_).translation().norm();//Get the distance traversed by the camera.
     if (motion_mag > DEFAULT_MINIMUM_TRANSLATION)
         ROS_WARN_STREAM(motion_mag);
-
-    if(!fuse_point_cloud)
-    {
-      goto publishing;
-    }
-    if(!continuous_mode)
-    {
-      fuse_point_cloud = false;
-    }
     if (motion_mag < DEFAULT_MINIMUM_TRANSLATION)
     {
         ROS_DEBUG_STREAM("Camera motion below threshold");
@@ -212,7 +199,8 @@ void PclFusion::onReceivedPointCloud(const sensor_msgs::PointCloud2ConstPtr& clo
         if(point.x>bounding_box[0] && point.x<bounding_box[1] && point.y>bounding_box[2] && point.y<bounding_box[3] && point.z>bounding_box[4] && point.z<bounding_box[5] )
             temp.push_back(point);
 /*    combined_pcl=combined_pcl+temp;//Combining the point clouds. TODO: Use ICP instead...
-    combined_pcl=PCLUtilities::downsample(combined_pcl); */          
+    combined_pcl=PCLUtilities::downsample(combined_pcl); */
+          
     if(combined_pcl.points.size())
     {
       if(USE_ICP)
@@ -234,8 +222,9 @@ void PclFusion::onReceivedPointCloud(const sensor_msgs::PointCloud2ConstPtr& clo
 
     if(combined_pcl.points.size()==0)
         combined_pcl+=temp;
-    fusion_frame_T_camera_prev_=fusion_frame_T_camera;
 
+    fusion_frame_T_camera_prev_=fusion_frame_T_camera;
+    
     publishing: ; 
 
     temp.clear();
@@ -263,29 +252,16 @@ void PclFusion::onReceivedPointCloud(const sensor_msgs::PointCloud2ConstPtr& clo
 
 bool PclFusion::savePointCloud(std_srvs::TriggerRequest& req, std_srvs::TriggerResponse& res)
 {
+	// ROS_WARN("I heard: [%s]", msg->data.c_str());
   res.success=true;
-  std::cout<<"Saving the Point Cloud"<<std::endl;
-  PCLUtilities::downsample(combined_pcl,0.01);
+
   PCLUtilities::pclToXYZ<PointXYZ>(combined_pcl,"/home/rex/Desktop/REX_WORK_SPACE/Test_WS/REX/CGAL/Data/test.xyz");
-  PCLUtilities::PclToPcd<PointXYZ>("/home/rex/Desktop/REX_WORK_SPACE/Test_WS/REX/CGAL/Data/test.pcd",combined_pcl);//Hard coded for debugging purposes...
+  PCLUtilities::PclToPcd<PointXYZ>("/home/rex/Desktop/REX_WORK_SPACE/Test_WS/REX/CGAL/Data/test.pcd",combined_pcl);
   std::cout<<"Fusion Done..."<<std::endl;
+
   return true;
 }
 
-bool PclFusion::resetFusion(std_srvs::TriggerRequest& req, std_srvs::TriggerResponse& res)
-{
-  res.success=true;
-  combined_pcl.clear();
-  //Might need to make the current transformation matrix as identity....TODO
-  return true;
-}
-
-bool PclFusion::capturePointCloud(std_srvs::TriggerRequest& req, std_srvs::TriggerResponse& res)
-{
-  res.success = true;
-  fuse_point_cloud = true;
-  return true;
-}
 
 ////////////////////////////////////////////////////////////////////////////////
 /** \brief Align a pair of PointCloud datasets and return the result
@@ -336,8 +312,6 @@ void PclFusion::pairAlign (const pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_src, 
   norm_est.compute (*points_with_normals_tgt);
   pcl::copyPointCloud (*tgt, *points_with_normals_tgt);
 
-  //The following commented codes not linking, TODO.
-
   // std::vector<int> aux_indices;
   // removeNaNFromPointCloud (*src, *src, aux_indices);
   // removeNaNNormalsFromPointCloud (*src, *src, aux_indices);
@@ -352,21 +326,26 @@ void PclFusion::pairAlign (const pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_src, 
   // ... and weight the 'curvature' dimension so that it is balanced against x, y, and z
   float alpha[4] = {1.0, 1.0, 1.0, 1.0};
   point_representation.setRescaleValues (alpha);
+
   std::cout<<"Aligning Point Clouds..."<<std::endl;
+
+
   //
   // Align
   pcl::IterativeClosestPointNonLinear<PointNormal, PointNormal> reg;
   reg.setTransformationEpsilon (1e-9);
   // Set the maximum distance between two correspondences (src<->tgt)
   // Note: adjust this based on the size of your datasets
-  reg.setMaxCorrespondenceDistance (0.005); //TODO: Need to update this later.... Might be too tight
+  reg.setMaxCorrespondenceDistance (0.005); //TODO: Need to update this later.... 
   reg.setEuclideanFitnessEpsilon (1);
   reg.setRANSACOutlierRejectionThreshold (0.001);
   // Set the point representation
   reg.setPointRepresentation (boost::make_shared<const MyPointRepresentation> (point_representation));
+
   reg.setInputSource (points_with_normals_src);
   reg.setInputTarget (points_with_normals_tgt);
-// Run the same optimization in a loop
+
+// Run the same optimization in a loop and visualize the results
   Eigen::Matrix4f Ti = Eigen::Matrix4f::Identity (), prev, targetToSource;
   pcl::PointCloud<PointNormal>::Ptr reg_result = points_with_normals_src;
   reg.setMaximumIterations (max_icp_iterations);
@@ -380,6 +359,7 @@ void PclFusion::pairAlign (const pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_src, 
     // Estimate
     reg.setInputSource (points_with_normals_src);
     reg.align (*reg_result);
+
         //accumulate transformation between each Iteration
     Ti = reg.getFinalTransformation () * Ti;
 
@@ -387,16 +367,24 @@ void PclFusion::pairAlign (const pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_src, 
         //is smaller than the threshold, refine the process by reducing
         //the maximal correspondence distance
     if (std::abs ((reg.getLastIncrementalTransformation () - prev).sum ()) < reg.getTransformationEpsilon ())
-      reg.setMaxCorrespondenceDistance (reg.getMaxCorrespondenceDistance () - 0.0002);    
+      reg.setMaxCorrespondenceDistance (reg.getMaxCorrespondenceDistance () - 0.0002);
+    
     prev = reg.getLastIncrementalTransformation ();
+
   }
   targetToSource = Ti.inverse();
+
+  std::cout<<"Before transforming cloud"<<std::endl;
+
+  //
   // Transform target back in source frame
   pcl::transformPointCloud (*cloud_tgt, *output, targetToSource);
+
   //add the source to the transformed target
    *output += *cloud_src;
    final_transform = targetToSource;
    std::cout<<"End of the align function..."<<std::endl;
+
 }
 
 int main(int argc, char** argv)

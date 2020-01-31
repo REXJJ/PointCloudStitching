@@ -70,7 +70,7 @@ using namespace pcl;
 /***************************************************/
 ros::Publisher pub;
 static const std::double_t DEFAULT_MINIMUM_TRANSLATION = 0.1;
-const bool USE_ICP = false;
+const bool USE_ICP = true;
 std::double_t distance_moved = 0.0;
 const double leaf_size = 0.01;
 const int neighbors = 512;
@@ -263,9 +263,8 @@ void PclFusion::onReceivedPointCloud(const sensor_msgs::PointCloud2ConstPtr& clo
 
 bool PclFusion::savePointCloud(std_srvs::TriggerRequest& req, std_srvs::TriggerResponse& res)
 {
+	// ROS_WARN("I heard: [%s]", msg->data.c_str());
   res.success=true;
-  std::cout<<"Saving the Point Cloud"<<std::endl;
-  PCLUtilities::downsample(combined_pcl,0.01);
   PCLUtilities::pclToXYZ<PointXYZ>(combined_pcl,"/home/rex/Desktop/REX_WORK_SPACE/Test_WS/REX/CGAL/Data/test.xyz");
   PCLUtilities::PclToPcd<PointXYZ>("/home/rex/Desktop/REX_WORK_SPACE/Test_WS/REX/CGAL/Data/test.pcd",combined_pcl);//Hard coded for debugging purposes...
   std::cout<<"Fusion Done..."<<std::endl;
