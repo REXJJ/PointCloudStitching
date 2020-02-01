@@ -213,7 +213,36 @@ include_directories(${PCL_INCLUDE_DIRS})
 link_directories(${PCL_LIBRARY_DIRS})
 add_definitions(${PCL_DEFINITIONS})
 find_package(OpenCV REQUIRED)
+find_package( CGAL QUIET COMPONENTS  )
 include_directories(${OpenCV_INCLUDE_DIRS})
+
+if ( NOT CGAL_FOUND )
+
+  message(STATUS "This project requires the CGAL library, and will not be compiled.")
+  return()  
+
+endif()
+
+
+# Boost and its components
+find_package( Boost REQUIRED )
+if ( NOT Boost_FOUND )
+  message(STATUS "This project requires the Boost library, and will not be compiled.")
+  return()  
+endif()
+
+function(create_cgal_exe firstfile )
+  get_filename_component(exe_name src/${firstfile} NAME_WE)
+    add_executable(${exe_name} src/${firstfile})
+    add_to_cached_list( CGAL_EXECUTABLE_TARGETS ${exe_name} )
+    if ( CGAL_AUTO_LINK_ENABLED )
+      target_link_libraries(${exe_name} ${CGAL_3RD_PARTY_LIBRARIES} )
+    else()
+
+      target_link_libraries(${exe_name} ${CGAL_LIBRARIES} ${CGAL_3RD_PARTY_LIBRARIES} )
+    endif()
+          target_link_libraries (${exe_name} ${PCL_LIBRARIES} ${CGAL_LIBRARIES} ${CGAL_3RD_PARTY_LIBRARIES} ${catkin_LIBRARIES} ${OpenCV_LIBS} )
+endfunction()
 
 
 function(create_exe firstfile )
@@ -222,6 +251,6 @@ target_link_libraries(${firstfile} ${catkin_LIBRARIES})
 target_link_libraries(${firstfile} ${PCL_LIBRARIES} ${OpenCV_LIBS})
 endfunction()
 
-create_exe(pcl_stitch_node)
+create_cgal_exe(pcl_stitch_node.cpp)
 create_exe(chatter)
 create_exe(pcl_filter_node)

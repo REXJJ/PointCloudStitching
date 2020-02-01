@@ -157,6 +157,7 @@ void PclFilter::depthImageCb(const sensor_msgs::ImageConstPtr& msg)
     depth_image=cv_ptr->image.clone();
     // imshow("Depth_Image",depth_image);
     // waitKey(3);
+    //TODO: Capturing only consistent pixels..
     if(depth_done==false)
     {
       combined_depth_image = cv::Mat::zeros(depth_image.size(), depth_image.type());

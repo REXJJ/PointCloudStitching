@@ -53,11 +53,39 @@
 /************************************************/
 #include <iostream>
 #include <cmath>
+#include <vector>
+#include <fstream>
+
+/************************************************/
+//CGAL HEADERS
+/************************************************/
+#include <CGAL/Exact_predicates_inexact_constructions_kernel.h>
+#include <CGAL/grid_simplify_point_set.h>
+#include <CGAL/IO/read_xyz_points.h>
+#include <CGAL/property_map.h>
+#include <vector>
+#include <fstream>
+#include <iostream>
+#include <string>
+#include <CGAL/compute_average_spacing.h>
+#include <CGAL/remove_outliers.h>
+
+#include <CGAL/Scale_space_surface_reconstruction_3.h>
+#include <CGAL/Exact_predicates_inexact_constructions_kernel.h>
+#include <CGAL/IO/read_off_points.h>
+#include <CGAL/Timer.h>
+
+/*************************************************/
+//Other Libraries
+/*************************************************/
 
 #include <Eigen/Dense>
 #include <Eigen/Core>
 #include <boost/make_shared.hpp>
 
+/************************************************/
+//LOCAL HEADERS
+/***********************************************/
 #include "point_cloud_stitching/pcl_fusion.hpp"
 #include "point_cloud_utilities/pcl_utilities.hpp"
 
@@ -66,13 +94,21 @@ using namespace fusion;
 using namespace pcl;
 
 /***************************************************/
+//CGAL Typedefs
+/***************************************************/
+typedef CGAL::Exact_predicates_inexact_constructions_kernel Kernel;
+typedef Kernel::Point_3 Point_cgal;
+typedef Kernel::Vector_3 Vector_cgal;
+typedef CGAL::Scale_space_surface_reconstruction_3<Kernel>    Reconstruction;
+typedef Reconstruction::Facet_const_iterator                   Facet_iterator;
+/***************************************************/
 //Global Variables
 /***************************************************/
 ros::Publisher pub;
 static const std::double_t DEFAULT_MINIMUM_TRANSLATION = 0.1;
-const bool USE_ICP = false;
+const bool USE_ICP = true;
 std::double_t distance_moved = 0.0;
-const double leaf_size = 0.01;
+const double leaf_size = 0.001;
 const int neighbors = 512;
 const int max_icp_iterations = 60;
 const int max_rounds = 100;
@@ -100,17 +136,68 @@ public:
   }
 };
 
-void cleanPointCloud(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_in, pcl::PointCloud<pcl::PointXYZ>::Ptr cleaned_cloud)
+pcl::PointCloud<pcl::PointXYZ> cleanPointCloud(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_in)
 {
     pcl::PointCloud<pcl::PointXYZ> cloud_voxelized;
     //voxelize the combined cloud so we have some semi clean data that isn't insanely large
 
     std::cout<<"Voxelizing the points..."<<std::endl;
 
+    std::cout<<"Points in the input cloud.... in clean...."<<cloud_in->points.size()<<std::endl;
+
     pcl::VoxelGrid<pcl::PointXYZ> voxelSampler;
     voxelSampler.setInputCloud(cloud_in);
-    voxelSampler.setLeafSize(leaf_size,leaf_size,leaf_size);
+    voxelSampler.setLeafSize(0.002,0.002,0.002);
     voxelSampler.filter(cloud_voxelized);
+
+    std::vector<Point_cgal> cgal_points;
+    for(auto point:cloud_voxelized.points)
+    {
+      Point_cgal p(point.x,point.y,point.z);
+      cgal_points.push_back(p);
+    }
+
+    std::cout << cgal_points.size() << " input points" << std::endl;
+    std::vector<std::size_t> indices(cgal_points.size());
+    for(std::size_t i = 0; i < cgal_points.size(); ++i){
+      indices[i] = i;
+    }
+
+    const int nb_neighbors = 128; // considers 24 nearest neighbor points
+    const double removed_percentage = (20.0); // percentage of points to remove
+    cgal_points.erase(CGAL::remove_outliers
+                 (cgal_points,
+                  nb_neighbors,
+                  CGAL::parameters::threshold_percent(removed_percentage). // Minimum percentage to remove
+                  threshold_distance(0.)), // No distance threshold (can be omitted)
+                 cgal_points.end());
+    std::cout<<"The size of the points after outlier removal : "<<cgal_points.size()<<std::endl;
+    double cell_size = 0.003875;
+    std::cout<<cell_size<<std::endl;
+    std::vector<std::size_t>::iterator end;
+    end = CGAL::grid_simplify_point_set(indices,
+                                        cell_size,
+                                        CGAL::parameters::point_map (CGAL::make_property_map(cgal_points)));
+    std::size_t k = end - indices.begin();
+    std::cerr << "Keep " << k << " of " << indices.size() <<  " indices" << std::endl;
+    {
+      std::vector<Point_cgal> tmp_points(k);
+      for(std::size_t i=0; i<k; ++i){
+        tmp_points[i] = cgal_points[indices[i]];
+      }
+      cgal_points.swap(tmp_points);
+    }
+    std::cout << cgal_points.size() << " points after the simplification" << std::endl;
+
+    cloud_voxelized.clear();
+    std::cout<<"Voxelized cloud cleared...."<<cloud_voxelized.size()<<std::endl;
+
+    for(auto pt:cgal_points)
+    {
+      cloud_voxelized.points.push_back(pcl::PointXYZ(pt[0],pt[1],pt[2]));
+    }
+
+    std::cout<<"Voxelized cloud refilled...."<<cloud_voxelized.points.size()<<std::endl;
 
     std::cout<<"MLS..."<<std::endl;
 
@@ -124,7 +211,7 @@ void cleanPointCloud(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_in, pcl::PointClo
     mls.setInputCloud(cloud_voxelized.makeShared());
     mls.setPolynomialOrder(3);
     mls.setSearchMethod(tree);
-    mls.setSearchRadius(0.01*10.0); // made this 1 order of magnitude bigger than the voxel size
+    mls.setSearchRadius(0.005*10.0); // made this 1 order of magnitude bigger than the voxel size
     mls.setSqrGaussParam(mls.getSearchRadius()*mls.getSearchRadius()); // usually set this to be square of the search radius
     mls.process(mls_points);
 
@@ -144,14 +231,19 @@ void cleanPointCloud(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_in, pcl::PointClo
 
     std::cout<<"Reached Here..."<<std::endl;
 
-    for(auto point:filtered_pcl.points)
+    cloud_voxelized.clear();
+
+    for(auto point:mls_points.points)
     {
       PointXYZ pt={point.x,point.y,point.z};
-      cleaned_cloud->points.push_back(pt);
+      cloud_voxelized.points.push_back(pt);
     }
 
-    std::cout<<"End of Function.."<<std::endl;
+    cloud_voxelized.width=mls_points.points.size();
+    cloud_voxelized.height=1;
 
+    std::cout<<"End of Function.."<<std::endl;
+    return cloud_voxelized;
   }
 
 PclFusion::PclFusion(ros::NodeHandle& nh,const std::string& fusion_frame,vector<double>& box)//The queue size is kept to one.
@@ -223,7 +315,8 @@ void PclFusion::onReceivedPointCloud(const sensor_msgs::PointCloud2ConstPtr& clo
           std::cout<<"ICP Successfull.."<<std::endl;
           combined_pcl.clear();
           for(auto x:output->points)
-              combined_pcl.points.push_back(x);      
+              combined_pcl.points.push_back(x);  
+          std::cout<<"Output in Main function...."<<combined_pcl.points.size()<<std::endl;    
       }
       else
       {
@@ -245,6 +338,9 @@ void PclFusion::onReceivedPointCloud(const sensor_msgs::PointCloud2ConstPtr& clo
 
     combined_pcl=temp;
 
+    std::cout<<"Output in Main function 2...."<<combined_pcl.points.size()<<std::endl;    
+
+
     // cout<<"SAVE : "<<SAVE<<" SAVING_DONE : "<<SAVING_DONE<<std::endl;
     
     pcl::PCLPointCloud2* cloud_output = new pcl::PCLPointCloud2; 
@@ -265,7 +361,17 @@ bool PclFusion::savePointCloud(std_srvs::TriggerRequest& req, std_srvs::TriggerR
 {
   res.success=true;
   std::cout<<"Saving the Point Cloud"<<std::endl;
-  PCLUtilities::downsample(combined_pcl,0.01);
+  // combined_pcl=PCLUtilities::downsample(combined_pcl,0.01);
+
+  std::cout<<combined_pcl.points.size()<<"Before cleaning..."<<std::endl;
+
+  combined_pcl = cleanPointCloud(combined_pcl.makeShared());
+
+  std::cout<<combined_pcl.points.size()<<"Before Saving...."<<std::endl;
+
+  PCLUtilities::publishPointCloud<PointXYZ>(combined_pcl,publish_cloud);
+
+
   PCLUtilities::pclToXYZ<PointXYZ>(combined_pcl,"/home/rex/Desktop/REX_WORK_SPACE/Test_WS/REX/CGAL/Data/test.xyz");
   PCLUtilities::PclToPcd<PointXYZ>("/home/rex/Desktop/REX_WORK_SPACE/Test_WS/REX/CGAL/Data/test.pcd",combined_pcl);//Hard coded for debugging purposes...
   std::cout<<"Fusion Done..."<<std::endl;
@@ -301,16 +407,31 @@ void PclFusion::pairAlign (const pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_src, 
   PointCloud<PointXYZ>::Ptr tgt (new PointCloud<PointXYZ>);
   pcl::VoxelGrid<PointXYZ> grid;
   std::cout<<"Cleaning Point Clouds..."<<std::endl;
+  PointCloud<PointXYZ>::Ptr src_temp (new PointCloud<PointXYZ>);
+  PointCloud<PointXYZ>::Ptr tgt_temp (new PointCloud<PointXYZ>);
   if (downsample)
   {
-    grid.setLeafSize (leaf_size,leaf_size,leaf_size);
+    grid.setLeafSize (0.001,0.001,0.001);
+    grid.setInputCloud (cloud_src);
+    grid.filter (*src_temp);
+    grid.setInputCloud (cloud_tgt);
+    grid.filter (*tgt_temp);
+
+    std::cout<<"Points in the cloud src..."<<src_temp->points.size()<<std::endl;
+    std::cout<<"Points in the cloud tgt..."<<tgt_temp->points.size()<<std::endl;
+
+
+    grid.setLeafSize (0.01,0.01,0.01);
     grid.setInputCloud (cloud_src);
     grid.filter (*src);
     grid.setInputCloud (cloud_tgt);
     grid.filter (*tgt);
-
+                       
     // cleanPointCloud(cloud_src,src);
     // cleanPointCloud(cloud_tgt,tgt);
+
+    // std::cout<<"Size of clouds before icp...."<<std::endl;
+    // std::cout<<src->points.size()<<" "<<tgt->points.size()<<std::endl;
   }
   else
   {
@@ -392,9 +513,10 @@ void PclFusion::pairAlign (const pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_src, 
   }
   targetToSource = Ti.inverse();
   // Transform target back in source frame
-  pcl::transformPointCloud (*cloud_tgt, *output, targetToSource);
+  pcl::transformPointCloud (*tgt_temp, *output, targetToSource);
   //add the source to the transformed target
-   *output += *cloud_src;
+   *output += *src_temp;
+   std::cout<<output->points.size()<<"Points in the output..."<<std::endl;
    final_transform = targetToSource;
    std::cout<<"End of the align function..."<<std::endl;
 }
