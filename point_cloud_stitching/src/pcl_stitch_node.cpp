@@ -311,7 +311,7 @@ void PclFusion::onReceivedPointCloud(const sensor_msgs::PointCloud2ConstPtr& clo
       {
           pcl::PointCloud<pcl::PointXYZ>::Ptr output (new PointCloud<PointXYZ>);
           Eigen::Matrix4f final_transform = Eigen::Matrix4f::Identity();
-          pairAlign (temp.makeShared(),combined_pcl.makeShared(),output,final_transform,true);
+          pairAlign (combined_pcl.makeShared(),temp.makeShared(),output,final_transform,true);
           std::cout<<"ICP Successfull.."<<std::endl;
           combined_pcl.clear();
           for(auto x:output->points)
@@ -482,7 +482,7 @@ void PclFusion::pairAlign (const pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_src, 
   // Note: adjust this based on the size of your datasets
   reg.setMaxCorrespondenceDistance (0.005); //TODO: Need to update this later.... Might be too tight
   reg.setEuclideanFitnessEpsilon (1);
-  reg.setRANSACOutlierRejectionThreshold (0.001);
+  reg.setRANSACOutlierRejectionThreshold (0.05);
   // Set the point representation
   reg.setPointRepresentation (boost::make_shared<const MyPointRepresentation> (point_representation));
   reg.setInputSource (points_with_normals_src);
@@ -491,6 +491,7 @@ void PclFusion::pairAlign (const pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_src, 
   Eigen::Matrix4f Ti = Eigen::Matrix4f::Identity (), prev, targetToSource;
   pcl::PointCloud<PointNormal>::Ptr reg_result = points_with_normals_src;
   reg.setMaximumIterations (max_icp_iterations);
+  bool icp_converged=false;
   for (int i = 0; i < max_rounds; ++i)
   {
     PCL_INFO ("Iteration Nr. %d.\n", i);
@@ -501,6 +502,10 @@ void PclFusion::pairAlign (const pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_src, 
     // Estimate
     reg.setInputSource (points_with_normals_src);
     reg.align (*reg_result);
+    std::cout<<reg.converged_<<std::endl;
+    if(icp_converged==false)
+      icp_converged=reg.converged_;
+
         //accumulate transformation between each Iteration
     Ti = reg.getFinalTransformation () * Ti;
 
@@ -513,6 +518,7 @@ void PclFusion::pairAlign (const pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_src, 
   }
   targetToSource = Ti.inverse();
   // Transform target back in source frame
+  if(icp_converged)
   pcl::transformPointCloud (*tgt_temp, *output, targetToSource);
   //add the source to the transformed target
    *output += *src_temp;
