@@ -56,9 +56,13 @@ namespace fusion
 
 	private:
 		void onReceivedPointCloud(const sensor_msgs::PointCloud2ConstPtr& cloud_in);
-		void pairAlign (const pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_src, const pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_tgt, pcl::PointCloud<pcl::PointXYZ>::Ptr output, Eigen::Matrix4f &final_transform, bool downsample);
+		void onReceivedPointCloud2(const sensor_msgs::PointCloud2ConstPtr& cloud_in);
+		void pairAlign (const pcl::PointCloud<pcl::PointXYZRGB>::Ptr cloud_src, const pcl::PointCloud<pcl::PointXYZRGB>::Ptr cloud_tgt, pcl::PointCloud<pcl::PointXYZRGB>::Ptr output, Eigen::Matrix4f &final_transform, bool downsample);
 		/** @brief Subscriber that listens to incoming point clouds */
 		ros::Subscriber point_cloud_sub_;
+
+    	ros::Subscriber point_cloud_sub2_;
+
 		/** @brief Buffer used to store locations of the camera (*/
 		tf2_ros::Buffer tf_buffer_;
 		/** @brief Listener used to look up tranforms for the location of the camera */
@@ -77,7 +81,7 @@ namespace fusion
 		/** @brief TF frame associated with the TSDF volume. */
 		std::string fusion_frame_;
 
-		pcl::PointCloud<pcl::PointXYZ> combined_pcl;
+		pcl::PointCloud<pcl::PointXYZRGB> combined_pcl;
 
 		ros::Publisher publish_cloud;
 

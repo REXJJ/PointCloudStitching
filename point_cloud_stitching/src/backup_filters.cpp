@@ -165,8 +165,6 @@ void PclFilter::depthImageCb(const sensor_msgs::ImageConstPtr& msg)
       combined_depth_image_matrix=Eigen::MatrixXd::Zero(depth_image.rows,depth_image.cols);
       useful_pixels.resize(depth_image.rows,depth_image.cols);
       useful_pixels=Eigen::MatrixXd::Zero(depth_image.rows,depth_image.cols);
-      consistent_pixels.resize(depth_image.rows,depth_image.cols);
-      consistent_pixels=Eigen::MatrixXd::Ones(depth_image.rows,depth_image.cols);
     }
     depth_done=true;
     if(capture)
@@ -177,11 +175,7 @@ void PclFilter::depthImageCb(const sensor_msgs::ImageConstPtr& msg)
         {
           for(int j=0;j<depth_image.cols;j++)
           {
-            if(depth_image.at<unsigned short>(i,j)==0 || depth_image.at<unsigned short>(i,j)!=depth_image.at<unsigned short>(i,j)) 
-              {
-                consistent_pixels(i,j)=0;
-                continue;
-              }
+            if(depth_image.at<unsigned short>(i,j)==0 || depth_image.at<unsigned short>(i,j)!=depth_image.at<unsigned short>(i,j)) continue;
             combined_depth_image_matrix(i,j)=combined_depth_image_matrix(i,j)+depth_image.at<unsigned short>(i,j);
             useful_pixels(i,j)++;
           }
@@ -192,21 +186,19 @@ void PclFilter::depthImageCb(const sensor_msgs::ImageConstPtr& msg)
       {
         for(int i=0;i<depth_image.rows;i++)
           for(int j=0;j<depth_image.cols;j++)
-            if(useful_pixels(i,j)&&consistent_pixels(i,j))
+            if(useful_pixels(i,j))
               combined_depth_image.at<unsigned short>(i,j)=combined_depth_image_matrix(i,j)/useful_pixels(i,j);
-       
         pcl::PointCloud<pcl::PointXYZRGB> cloud = PCLUtilities::makePointCloud(color_image,combined_depth_image,K,frame_id);
         std::cout<<"Made Point Cloud"<<std::endl;
         PCLUtilities::publishPointCloud<PointXYZRGB>(cloud,publish_cloud);
         std::cout<<"Point Cloud Published..."<<std::endl;
         std::cout<<"Points: "<<cloud.points.size()<<std::endl;
-        combined_point_cloud = cloud;
+
         combined_depth_image = cv::Mat::zeros(depth_image.size(), depth_image.type());
         combined_depth_image_matrix.resize(depth_image.rows,depth_image.cols);
         combined_depth_image_matrix=Eigen::MatrixXd::Zero(depth_image.rows,depth_image.cols);
         useful_pixels.resize(depth_image.rows,depth_image.cols);
         useful_pixels=Eigen::MatrixXd::Zero(depth_image.rows,depth_image.cols);
-        consistent_pixels=Eigen::MatrixXd::Ones(depth_image.rows,depth_image.cols);
         capture=false;
         frame_count=0;
       }
@@ -224,7 +216,6 @@ int main(int argc, char** argv)
     ros::init(argc, argv, "filter_node");
     ros::NodeHandle pnh("~");
     vector<string> params={"/camera/depth/camera_info","/camera/depth/image_rect_raw","/camera/color/image_raw"};
-    // vector<string> params={"/camera/aligned_depth_to_color/camera_info","/camera/aligned_depth_to_color/image_raw","/camera/color/image_raw"};
     PclFilter pf(pnh,params);    
     ros::spin();
     return 0;

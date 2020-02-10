@@ -1,5 +1,5 @@
-#ifndef PCL_FILTER_HPP
-#define PCL_FILTER_HPP
+#ifndef REALSENSE_HPP
+#define REALSENSE_HPP
 
 /*******************************************/
 //ROS HEADERS
