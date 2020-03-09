@@ -470,7 +470,7 @@ void PclFusion::pairAlign (const pcl::PointCloud<pcl::PointXYZRGB>::Ptr cloud_sr
   norm_est.compute (*points_with_normals_tgt);
   pcl::copyPointCloud (*tgt, *points_with_normals_tgt);
 
-  //The following commented codes not linking, TODO.
+  //The following commented codes not linking, TODO...
 
   // std::vector<int> aux_indices;
   // removeNaNFromPointCloud (*src, *src, aux_indices);
@@ -526,7 +526,7 @@ void PclFusion::pairAlign (const pcl::PointCloud<pcl::PointXYZRGB>::Ptr cloud_sr
         //is smaller than the threshold, refine the process by reducing
         //the maximal correspondence distance
     if (std::abs ((reg.getLastIncrementalTransformation () - prev).sum ()) < reg.getTransformationEpsilon ())
-      reg.setMaxCorrespondenceDistance (reg.getMaxCorrespondenceDistance () - 0.0002);    
+      reg.setMaxCorrespondenceDistance (reg.getMaxCorrespondenceDistance () - 0.0002);    //TODO: Might need to change this later...
     prev = reg.getLastIncrementalTransformation ();
   }
   targetToSource = Ti.inverse();

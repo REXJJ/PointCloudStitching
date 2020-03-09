@@ -1,11 +1,8 @@
 <launch>
   <!-- <node pkg="tf" type="static_transform_publisher" name="tool0_to_realsense" args="0.018555, 0.012360, 0.06261 0.8730765 0.0 1.5708 tool0 camera_depth_optical_frame 100" /> -->
-  <node pkg="tf" type="static_transform_publisher" name="tool0_to_realsense" args="0.018555, 0.012360, 0.06261 0.0 3.142 -1.5708 mesh_origin camera_depth_optical_frame 100" />
-  
+  <node pkg="tf" type="static_transform_publisher" name="tool0_to_realsense" args="0.018555, 0.012360, 0.06261 0.0 3.142 -1.5708 mesh_origin camera_depth_optical_frame 100" />  
   <node name="pcl_filter_node" pkg="point_cloud_stitching" type="pcl_filter_node" output="screen">
-    <remap from="~input_point_cloud" to="/camera/depth/color/points" />
   </node>
-
   <node name="pcl_fusion_node" pkg="point_cloud_stitching" type="pcl_stitch_node" output="screen">
     <remap from="~input_point_cloud" to="/pcl_filter_node/filtered_points" />
     <!-- <remap from="~input_point_cloud" to="/camera/depth/color/points" /> -->
@@ -16,4 +13,3 @@
     <!-- <rosparam param="bounding_box">[-100.0,100.0,-100.0,100.0,-100.0,100.0]</rosparam> -->
   </node>
 </launch>
-<!-- camera_depth_optical_frame -->

@@ -252,5 +252,4 @@ target_link_libraries(${firstfile} ${PCL_LIBRARIES} ${OpenCV_LIBS})
 endfunction()
 
 create_cgal_exe(pcl_stitch_node.cpp)
-create_exe(chatter)
 create_exe(pcl_filter_node)
