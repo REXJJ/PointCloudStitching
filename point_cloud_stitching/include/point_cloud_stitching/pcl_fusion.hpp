@@ -56,28 +56,32 @@ namespace fusion
 
 	private:
 		void onReceivedPointCloud(const sensor_msgs::PointCloud2ConstPtr& cloud_in);
-		void pairAlign (const pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_src, const pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_tgt, pcl::PointCloud<pcl::PointXYZ>::Ptr output, Eigen::Matrix4f &final_transform, bool downsample);
-		// bool onGenerateMesh(point_cloud_stitching::GenerateMeshRequest& req, point_cloud_stitching::GenerateMeshResponse& res);
-		// bool onReset(std_srvs::TriggerRequest& req, std_srvs::TriggerResponse& res);
-		// bool onUpdateParams(yak_ros_msgs::UpdateKinFuParamsRequest& req, yak_ros_msgs::UpdateKinFuParamsResponse& res);
+		void onReceivedPointCloud2(const sensor_msgs::PointCloud2ConstPtr& cloud_in);
+		void pairAlign (const pcl::PointCloud<pcl::PointXYZRGB>::Ptr cloud_src, const pcl::PointCloud<pcl::PointXYZRGB>::Ptr cloud_tgt, pcl::PointCloud<pcl::PointXYZRGB>::Ptr output, Eigen::Matrix4f &final_transform, bool downsample);
 		/** @brief Subscriber that listens to incoming point clouds */
 		ros::Subscriber point_cloud_sub_;
+
+    	ros::Subscriber point_cloud_sub2_;
+
 		/** @brief Buffer used to store locations of the camera (*/
 		tf2_ros::Buffer tf_buffer_;
 		/** @brief Listener used to look up tranforms for the location of the camera */
 		tf2_ros::TransformListener robot_tform_listener_;
-		/** @brief Service that is called to trigger marching cubes and saving the mesh */
+		/** @brief Service that is called to trigger mesh generation and saving the mesh as an stl...TODO*/
 		ros::ServiceServer generate_mesh_service_;
-		/** @brief Service that resets the tsdf volue */
+		/** @brief Service that resets the point clouds fused...TODO */
 		ros::ServiceServer reset_fusion_service_;
-		/** @brief Service that updates the KinFuParams and resets the TSDF volume */
-		ros::ServiceServer update_params_service_;
+		/** @brief Service that saves the point cloud */
+		ros::ServiceServer save_point_cloud;
 		/** @brief Used to track if the camera has moved. Only add image if it has */
+
+		ros::ServiceServer capture_point_cloud;
+
 		Eigen::Affine3d fusion_frame_T_camera_prev_;
 		/** @brief TF frame associated with the TSDF volume. */
 		std::string fusion_frame_;
 
-		pcl::PointCloud<pcl::PointXYZ> combined_pcl;
+		pcl::PointCloud<pcl::PointXYZRGB> combined_pcl;
 
 		ros::Publisher publish_cloud;
 
@@ -85,7 +89,11 @@ namespace fusion
 
 		ros::Subscriber saving_message_sub;
 
-		void chatterCallback(const std_msgs::String::ConstPtr& msg);
+		bool savePointCloud(std_srvs::TriggerRequest& req, std_srvs::TriggerResponse& res);
+
+		bool resetFusion(std_srvs::TriggerRequest& req, std_srvs::TriggerResponse& res);
+
+		bool capturePointCloud(std_srvs::TriggerRequest& req, std_srvs::TriggerResponse& res);
 
 	};
 }  // namespace fusion

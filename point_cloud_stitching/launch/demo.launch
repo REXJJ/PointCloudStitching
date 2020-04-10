@@ -1,8 +1,15 @@
 <launch>
-  <node pkg="tf" type="static_transform_publisher" name="tool0_to_realsense" args="0.018555, 0.012360, 0.06261 0.8730765 0.0 1.5708 tool0 camera_depth_optical_frame 100" />
+  <!-- <node pkg="tf" type="static_transform_publisher" name="tool0_to_realsense" args="0.018555, 0.012360, 0.06261 0.8730765 0.0 1.5708 tool0 camera_depth_optical_frame 100" /> -->
+  <node pkg="tf" type="static_transform_publisher" name="tool0_to_realsense" args="0.018555, 0.012360, 0.06261 0.0 3.142 -1.5708 mesh_origin camera_depth_optical_frame 100" />  
+  <node name="pcl_filter_node" pkg="point_cloud_stitching" type="pcl_filter_node" output="screen">
+  </node>
   <node name="pcl_fusion_node" pkg="point_cloud_stitching" type="pcl_stitch_node" output="screen">
-    <remap from="~input_point_cloud" to="/camera/depth/color/points" />
+    <remap from="~input_point_cloud" to="/pcl_filter_node/filtered_points" />
+    <!-- <remap from="~input_point_cloud" to="/camera/depth/color/points" /> -->
     <param name="fusion_frame" value="world"/>
-    <rosparam param="bounding_box">[0.90,1.20,-0.19,0.60,0.17,0.50]</rosparam>
+    <!-- <rosparam param="bounding_box">[0.90,1.20,-0.19,0.60,0.17,0.50]</rosparam> -->
+    <!-- <rosparam param="bounding_box">[0.815,-0.434,0.05,0.277,0.4,0.45]</rosparam> -->
+    <rosparam param="bounding_box">[0.28,0.65,-0.44,0.39,0.01,0.50]</rosparam>
+    <!-- <rosparam param="bounding_box">[-100.0,100.0,-100.0,100.0,-100.0,100.0]</rosparam> -->
   </node>
 </launch>

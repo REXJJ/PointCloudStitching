@@ -105,6 +105,7 @@ typedef Reconstruction::Facet_const_iterator                   Facet_iterator;
 /***************************************************/
 //PCL Typedefs
 /***************************************************/
+typedef pcl::PointXYZ PointT;
 
 /***************************************************/
 //Global Variables
@@ -141,16 +142,16 @@ public:
   }
 };
 
-pcl::PointCloud<pcl::PointXYZRGB> cleanPointCloud(pcl::PointCloud<pcl::PointXYZRGB>::Ptr cloud_in)
+pcl::PointCloud<pcl::PointXYZ> cleanPointCloud(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_in)
 {
-    pcl::PointCloud<pcl::PointXYZRGB> cloud_voxelized;
+    pcl::PointCloud<pcl::PointXYZ> cloud_voxelized;
     //voxelize the combined cloud so we have some semi clean data that isn't insanely large
 
     std::cout<<"Voxelizing the points..."<<std::endl;
 
     std::cout<<"Points in the input cloud.... in clean...."<<cloud_in->points.size()<<std::endl;
 
-    pcl::VoxelGrid<pcl::PointXYZRGB> voxelSampler;
+    pcl::VoxelGrid<pcl::PointXYZ> voxelSampler;
     voxelSampler.setInputCloud(cloud_in);
     voxelSampler.setLeafSize(0.002,0.002,0.002);
     voxelSampler.filter(cloud_voxelized);
@@ -199,7 +200,7 @@ pcl::PointCloud<pcl::PointXYZRGB> cleanPointCloud(pcl::PointCloud<pcl::PointXYZR
 
     for(auto pt:cgal_points)
     {
-      cloud_voxelized.points.push_back(pcl::PointXYZRGB(pt[0],pt[1],pt[2]));
+      cloud_voxelized.points.push_back(pcl::PointXYZ(pt[0],pt[1],pt[2]));
     }
 
     std::cout<<"Voxelized cloud refilled...."<<cloud_voxelized.points.size()<<std::endl;
@@ -208,10 +209,10 @@ pcl::PointCloud<pcl::PointXYZRGB> cleanPointCloud(pcl::PointCloud<pcl::PointXYZR
 
     // ROS_INFO("Performing MLS on the multisampled clouds...");
     // resample the data so we get normals that are reasonable using MLS
-    pcl::search::KdTree<pcl::PointXYZRGB>::Ptr tree(new pcl::search::KdTree<pcl::PointXYZRGB>);
+    pcl::search::KdTree<pcl::PointXYZ>::Ptr tree(new pcl::search::KdTree<pcl::PointXYZ>);
     // next perform MLS to average out the Z values and give us something reasonable looking
     pcl::PointCloud<pcl::PointNormal> mls_points;
-    pcl::MovingLeastSquares<pcl::PointXYZRGB,pcl::PointNormal> mls;
+    pcl::MovingLeastSquares<pcl::PointXYZ,pcl::PointNormal> mls;
     mls.setComputeNormals(true);
     mls.setInputCloud(cloud_voxelized.makeShared());
     mls.setPolynomialOrder(3);
@@ -240,7 +241,7 @@ pcl::PointCloud<pcl::PointXYZRGB> cleanPointCloud(pcl::PointCloud<pcl::PointXYZR
 
     for(auto point:mls_points.points)
     {
-      PointXYZRGB pt={point.x,point.y,point.z};
+      PointXYZ pt={point.x,point.y,point.z};
       cloud_voxelized.points.push_back(pt);
     }
 
@@ -288,10 +289,10 @@ void PclFusion::onReceivedPointCloud(const sensor_msgs::PointCloud2ConstPtr& clo
     // Convert to useful point cloud format
     pcl::PCLPointCloud2 pcl_pc2;
     pcl_conversions::toPCL(*cloud_in, pcl_pc2);
-    pcl::PointCloud<pcl::PointXYZRGB> cloud;
+    pcl::PointCloud<pcl::PointXYZ> cloud;
     pcl::fromPCLPointCloud2(pcl_pc2, cloud);
     Eigen::Affine3d fusion_frame_T_camera = Eigen::Affine3d::Identity();
-    pcl::PointCloud<pcl::PointXYZRGB> cloud_transformed;
+    pcl::PointCloud<pcl::PointXYZ> cloud_transformed;
     try
     {
         geometry_msgs::TransformStamped transform_fusion_frame_T_camera = tf_buffer_.lookupTransform(fusion_frame_, cloud_in->header.frame_id, ros::Time(0));
@@ -303,7 +304,7 @@ void PclFusion::onReceivedPointCloud(const sensor_msgs::PointCloud2ConstPtr& clo
         ROS_WARN("%s", ex.what());
         return;
     }
-    pcl::PointCloud<pcl::PointXYZRGB> temp;
+    pcl::PointCloud<pcl::PointXYZ> temp;
     std::double_t motion_mag = (fusion_frame_T_camera.inverse() * fusion_frame_T_camera_prev_).translation().norm();//Get the distance traversed by the camera.
     if (motion_mag > DEFAULT_MINIMUM_TRANSLATION)
         ROS_WARN_STREAM(motion_mag);
@@ -332,7 +333,7 @@ void PclFusion::onReceivedPointCloud(const sensor_msgs::PointCloud2ConstPtr& clo
     {
       if(USE_ICP)
       {
-          pcl::PointCloud<pcl::PointXYZRGB>::Ptr output (new PointCloud<PointXYZRGB>);
+          pcl::PointCloud<pcl::PointXYZ>::Ptr output (new PointCloud<PointXYZ>);
           Eigen::Matrix4f final_transform = Eigen::Matrix4f::Identity();
           pairAlign (combined_pcl.makeShared(),temp.makeShared(),output,final_transform,true);
           std::cout<<"ICP Successfull.."<<std::endl;
@@ -382,11 +383,11 @@ bool PclFusion::savePointCloud(std_srvs::TriggerRequest& req, std_srvs::TriggerR
 
   std::cout<<combined_pcl.points.size()<<"Before Saving...."<<std::endl;
 
-  PCLUtilities::publishPointCloud<PointXYZRGB>(combined_pcl,publish_cloud);
+  PCLUtilities::publishPointCloud<PointXYZ>(combined_pcl,publish_cloud);
 
 
-  PCLUtilities::pclToXYZ<PointXYZRGB>(combined_pcl,"/home/rex/Desktop/REX_WORK_SPACE/Test_WS/REX/CGAL/Data/test.xyz");
-  PCLUtilities::PclToPcd<PointXYZRGB>("/home/rex/Desktop/REX_WORK_SPACE/Test_WS/REX/CGAL/Data/test.pcd",combined_pcl);//Hard coded for debugging purposes...
+  PCLUtilities::pclToXYZ<PointXYZ>(combined_pcl,"/home/rex/Desktop/REX_WORK_SPACE/Test_WS/REX/CGAL/Data/test.xyz");
+  PCLUtilities::PclToPcd<PointXYZ>("/home/rex/Desktop/REX_WORK_SPACE/Test_WS/REX/CGAL/Data/test.pcd",combined_pcl);//Hard coded for debugging purposes...
   std::cout<<"Fusion Done..."<<std::endl;
   return true;
 }
@@ -413,15 +414,15 @@ bool PclFusion::capturePointCloud(std_srvs::TriggerRequest& req, std_srvs::Trigg
   * \param output the resultant aligned source PointCloud
   * \param final_transform the resultant transform between source and target
   */
-void PclFusion::pairAlign (const pcl::PointCloud<pcl::PointXYZRGB>::Ptr cloud_src, const pcl::PointCloud<pcl::PointXYZRGB>::Ptr cloud_tgt, pcl::PointCloud<pcl::PointXYZRGB>::Ptr output, Eigen::Matrix4f &final_transform, bool downsample = false)
+void PclFusion::pairAlign (const pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_src, const pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_tgt, pcl::PointCloud<pcl::PointXYZ>::Ptr output, Eigen::Matrix4f &final_transform, bool downsample = false)
 {
 
-  PointCloud<PointXYZRGB>::Ptr src (new PointCloud<PointXYZRGB>);
-  PointCloud<PointXYZRGB>::Ptr tgt (new PointCloud<PointXYZRGB>);
-  pcl::VoxelGrid<PointXYZRGB> grid;
+  PointCloud<PointXYZ>::Ptr src (new PointCloud<PointXYZ>);
+  PointCloud<PointXYZ>::Ptr tgt (new PointCloud<PointXYZ>);
+  pcl::VoxelGrid<PointXYZ> grid;
   std::cout<<"Cleaning Point Clouds..."<<std::endl;
-  PointCloud<PointXYZRGB>::Ptr src_temp (new PointCloud<PointXYZRGB>);
-  PointCloud<PointXYZRGB>::Ptr tgt_temp (new PointCloud<PointXYZRGB>);
+  PointCloud<PointXYZ>::Ptr src_temp (new PointCloud<PointXYZ>);
+  PointCloud<PointXYZ>::Ptr tgt_temp (new PointCloud<PointXYZ>);
   if (downsample)
   {
     grid.setLeafSize (0.001,0.001,0.001);
@@ -457,8 +458,8 @@ void PclFusion::pairAlign (const pcl::PointCloud<pcl::PointXYZRGB>::Ptr cloud_sr
   PointCloud<PointNormal>::Ptr points_with_normals_src (new PointCloud<PointNormal>);
   PointCloud<PointNormal>::Ptr points_with_normals_tgt (new PointCloud<PointNormal>);
 
-  pcl::NormalEstimation<PointXYZRGB, PointNormal> norm_est;
-  pcl::search::KdTree<PointXYZRGB>::Ptr tree (new pcl::search::KdTree<PointXYZRGB> ());
+  pcl::NormalEstimation<PointXYZ, PointNormal> norm_est;
+  pcl::search::KdTree<PointXYZ>::Ptr tree (new pcl::search::KdTree<PointXYZ> ());
   norm_est.setSearchMethod (tree);
   norm_est.setKSearch (neighbors);
   
@@ -470,7 +471,7 @@ void PclFusion::pairAlign (const pcl::PointCloud<pcl::PointXYZRGB>::Ptr cloud_sr
   norm_est.compute (*points_with_normals_tgt);
   pcl::copyPointCloud (*tgt, *points_with_normals_tgt);
 
-  //The following commented codes not linking, TODO...
+  //The following commented codes not linking, TODO.
 
   // std::vector<int> aux_indices;
   // removeNaNFromPointCloud (*src, *src, aux_indices);
@@ -526,7 +527,7 @@ void PclFusion::pairAlign (const pcl::PointCloud<pcl::PointXYZRGB>::Ptr cloud_sr
         //is smaller than the threshold, refine the process by reducing
         //the maximal correspondence distance
     if (std::abs ((reg.getLastIncrementalTransformation () - prev).sum ()) < reg.getTransformationEpsilon ())
-      reg.setMaxCorrespondenceDistance (reg.getMaxCorrespondenceDistance () - 0.0002);    //TODO: Might need to change this later...
+      reg.setMaxCorrespondenceDistance (reg.getMaxCorrespondenceDistance () - 0.0002);    
     prev = reg.getLastIncrementalTransformation ();
   }
   targetToSource = Ti.inverse();
@@ -537,7 +538,6 @@ void PclFusion::pairAlign (const pcl::PointCloud<pcl::PointXYZRGB>::Ptr cloud_sr
    *output += *src_temp;
    std::cout<<output->points.size()<<"Points in the output..."<<std::endl;
    final_transform = targetToSource;
-   cout<<Ti<<endl;
    std::cout<<"End of the align function..."<<std::endl;
 }
 
@@ -549,13 +549,7 @@ int main(int argc, char** argv)
     pnh.param<std::string>("fusion_frame", fusion_frame, "fusion_frame");
     std::vector<double> bounding_box;
     pnh.param("bounding_box", bounding_box, std::vector<double>());
-    PclFusion pf(pnh,fusion_frame,bounding_box); 
-    ros::Rate loop_rate(1);
-    while(ros::ok())
-    {
-      ros::spinOnce();
-      loop_rate.sleep();
-    }   
-    // ros::spin();
+    PclFusion pf(pnh,fusion_frame,bounding_box);    
+    ros::spin();
     return 0;
 }
