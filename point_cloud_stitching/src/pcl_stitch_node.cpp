@@ -110,15 +110,17 @@ typedef Reconstruction::Facet_const_iterator                   Facet_iterator;
 //Global Variables
 /***************************************************/
 ros::Publisher pub;
+ros::Publisher fused;
 static const std::double_t DEFAULT_MINIMUM_TRANSLATION = 0.1;
 const bool USE_ICP = true;
 std::double_t distance_moved = 0.0;
 const double leaf_size = 0.001;
 const int neighbors = 512;
-const int max_icp_iterations = 60;
-const int max_rounds = 100;
+const int max_icp_iterations = 10;
+const int max_rounds = 10;
 bool fuse_point_cloud = true;
 bool continuous_mode = true;
+string file_name;
 
 class MyPointRepresentation : public pcl::PointRepresentation <PointNormal>
 {
@@ -262,7 +264,6 @@ PclFusion::PclFusion(ros::NodeHandle& nh,const std::string& fusion_frame,vector<
     save_point_cloud = nh.advertiseService("/pcl_fusion_node/save_point_cloud", &PclFusion::savePointCloud, this);
     reset_fusion_service_=nh.advertiseService("/pcl_fusion_node/reset",&PclFusion::resetFusion, this);
     capture_point_cloud = nh.advertiseService("/pcl_fusion_node/capture_point_cloud",&PclFusion::capturePointCloud,this);
-
     publish_cloud = nh.advertise<sensor_msgs::PointCloud2> ("pcl_fusion_node/fused_points", 1);
 }
 
@@ -381,12 +382,9 @@ bool PclFusion::savePointCloud(std_srvs::TriggerRequest& req, std_srvs::TriggerR
   combined_pcl = cleanPointCloud(combined_pcl.makeShared());
 
   std::cout<<combined_pcl.points.size()<<"Before Saving...."<<std::endl;
-
   PCLUtilities::publishPointCloud<PointXYZRGB>(combined_pcl,publish_cloud);
-
-
-  PCLUtilities::pclToXYZ<PointXYZRGB>(combined_pcl,"/home/rex/Desktop/REX_WORK_SPACE/Test_WS/REX/CGAL/Data/test.xyz");
-  PCLUtilities::PclToPcd<PointXYZRGB>("/home/rex/Desktop/REX_WORK_SPACE/Test_WS/REX/CGAL/Data/test.pcd",combined_pcl);//Hard coded for debugging purposes...
+  PCLUtilities::pclToXYZ<PointXYZRGB>(combined_pcl,file_name+"/test.xyz");
+  PCLUtilities::PclToPcd<PointXYZRGB>(file_name+"/test.pcd",combined_pcl);//Hard coded for debugging purposes...
   std::cout<<"Fusion Done..."<<std::endl;
   return true;
 }
@@ -539,6 +537,13 @@ void PclFusion::pairAlign (const pcl::PointCloud<pcl::PointXYZRGB>::Ptr cloud_sr
    final_transform = targetToSource;
    cout<<Ti<<endl;
    std::cout<<"End of the align function..."<<std::endl;
+   
+
+   std_msgs::String msg;
+        std::stringstream ss;
+      ss << "fused ";
+      msg.data = ss.str();
+         fused.publish(msg);
 }
 
 int main(int argc, char** argv)
@@ -547,10 +552,12 @@ int main(int argc, char** argv)
     ros::NodeHandle pnh("~");
     string fusion_frame="";
     pnh.param<std::string>("fusion_frame", fusion_frame, "fusion_frame");
+    file_name = ros::package::getPath("point_cloud_stitching");
     std::vector<double> bounding_box;
     pnh.param("bounding_box", bounding_box, std::vector<double>());
     PclFusion pf(pnh,fusion_frame,bounding_box); 
     ros::Rate loop_rate(1);
+    fused = pnh.advertise<std_msgs::String>("/fused",1);
     while(ros::ok())
     {
       ros::spinOnce();

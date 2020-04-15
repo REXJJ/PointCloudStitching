@@ -1,0 +1,4 @@
+<launch>
+  <node name="pcl_filter_node" pkg="point_cloud_stitching" type="pcl_filter_node" output="screen">
+  </node>
+</launch>

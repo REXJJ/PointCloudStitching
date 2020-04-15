@@ -10,6 +10,8 @@
 #include <tf2_ros/transform_listener.h>
 #include <tf2_eigen/tf2_eigen.h>
 #include <cv_bridge/cv_bridge.h>
+#include <tf2_ros/transform_listener.h>
+#include <tf2_eigen/tf2_eigen.h>
 #include "std_msgs/String.h"
 
 #include <sensor_msgs/image_encodings.h>
@@ -81,9 +83,11 @@ using namespace cv;
 //Global Variables..
 /************************************************/
 ros::Publisher pub;
+ros::Publisher data_collected;
 const int MAX_FRAMES=60;
-
-
+string file_name;
+int take=0;
+tf2_ros::Buffer tf_buffer_;
 
 PclFilter::PclFilter(ros::NodeHandle& nh,vector<string>& topics)//CameraInfo, DepthImage, ColorImage
 {  // Subscribe to point cloud
@@ -121,6 +125,11 @@ void PclFilter::cameraInfoCb(const sensor_msgs::CameraInfoConstPtr& msg)
     fx=K[0],cx=K[2],fy=K[4],cy=K[5];
     camera_done=true;
     frame_id=msg->header.frame_id;
+    ofstream f(file_name+"/transforms/camera.csv");
+    f<<K(0);
+    for(int i=1;i<9;i++)
+      f<<","<<K(i);
+    f.close();
     info_sub_.shutdown();
 }
 
@@ -137,8 +146,6 @@ void PclFilter::colorImageCb(const sensor_msgs::ImageConstPtr& msg)
         return;
     }
     color_image=cv_ptr->image.clone();
-    // imshow("Color_Image",color_image);
-    // waitKey(3);                                          // Wait for a keystroke in the window
     color_done=true;
 }
 
@@ -155,9 +162,6 @@ void PclFilter::depthImageCb(const sensor_msgs::ImageConstPtr& msg)
         return;
     }
     depth_image=cv_ptr->image.clone();
-    // imshow("Depth_Image",depth_image);
-    // waitKey(3);
-    //TODO: Capturing only consistent pixels..
     if(depth_done==false)
     {
       combined_depth_image = cv::Mat::zeros(depth_image.size(), depth_image.type());
@@ -171,6 +175,10 @@ void PclFilter::depthImageCb(const sensor_msgs::ImageConstPtr& msg)
     depth_done=true;
     if(capture)
     {
+      string depth_file=file_name+"/depth_images/image"+to_string(take);
+      string color_file=file_name+"/color_images/image"+to_string(take);
+       imwrite(color_file+".jpg",color_image);
+       imwrite(depth_file+to_string(frame_count)+".png",depth_image);
       if(frame_count<MAX_FRAMES)
       {
         for(int i=0;i<depth_image.rows;i++)
@@ -194,7 +202,8 @@ void PclFilter::depthImageCb(const sensor_msgs::ImageConstPtr& msg)
           for(int j=0;j<depth_image.cols;j++)
             if(useful_pixels(i,j)&&consistent_pixels(i,j))
               combined_depth_image.at<unsigned short>(i,j)=combined_depth_image_matrix(i,j)/useful_pixels(i,j);
-       
+ 
+        imwrite(file_name+"/depth_images/image_averaged"+to_string(take)+".png",depth_image);
         pcl::PointCloud<pcl::PointXYZRGB> cloud = PCLUtilities::makePointCloud(color_image,combined_depth_image,K,frame_id);
         std::cout<<"Made Point Cloud"<<std::endl;
         PCLUtilities::publishPointCloud<PointXYZRGB>(cloud,publish_cloud);
@@ -209,10 +218,36 @@ void PclFilter::depthImageCb(const sensor_msgs::ImageConstPtr& msg)
         consistent_pixels=Eigen::MatrixXd::Ones(depth_image.rows,depth_image.cols);
         capture=false;
         frame_count=0;
+        std_msgs::String msg;
+        std::stringstream ss;
+        ss << "All images saved... ";
+        msg.data = ss.str();
+        data_collected.publish(msg);
+        //Saving robot transfromation.
+        string robot_frame="/world";//Change it...
+        string pcl_frame="/depth_optical_frame";
+        try
+        {
+            geometry_msgs::TransformStamped transform_fusion_frame_T_camera = tf_buffer_.lookupTransform(robot_frame, pcl_frame, ros::Time(0));
+            Eigen::Affine3d rob_T_cam = tf2::transformToEigen(transform_fusion_frame_T_camera);
+            ofstream f(file_name+"/transforms/robot"+to_string(take)+".csv");
+            for(int i=0;i<4;i++)
+            {
+              f<<rob_T_cam(i,0);
+              for(int j=1;j<4;j++)
+                f<<","<<rob_T_cam(i,j);
+              f<<"\n";
+            } 
+        }
+        catch (tf2::TransformException& ex)
+        {
+            // Abort integration if tf lookup failed
+            ROS_WARN("%s", ex.what());
+            return;
+        }
       }
     }
 }
-
 
 void PclFilter::onReceivedRawPointCloud(const sensor_msgs::PointCloud2ConstPtr& cloud_in)
 {
@@ -223,47 +258,11 @@ int main(int argc, char** argv)
 {
     ros::init(argc, argv, "filter_node");
     ros::NodeHandle pnh("~");
-    // vector<string> params={"/camera/depth/camera_info","/camera/depth/image_rect_raw","/camera/color/image_raw"};
+    file_name = ros::package::getPath("point_cloud_stitching")+"/data";
     vector<string> params={"/camera/aligned_depth_to_color/camera_info","/camera/aligned_depth_to_color/image_raw","/camera/color/image_raw"};
+    data_collected = pnh.advertise<std_msgs::String>("/data_collected",1);
     PclFilter pf(pnh,params);    
     ros::spin();
     return 0;
 }
 
-// void normalSpaceSampling(PointCloud<PointXYZ>::Ptr cloud,PointCloud<PointXYZ>& output)
-// {
-//   PointCloud<PointNormal>::Ptr cloud_normals (new PointCloud<PointNormal> ());
-
-//   std::cout<<"Cloud Size..."<<cloud->points.size()<<std::endl;
-
-//   // Compute surface normals and curvature
-//   pcl::NormalEstimation<PointXYZ, PointNormal> norm_est;
-//   pcl::search::KdTree<PointXYZ>::Ptr tree (new pcl::search::KdTree<PointXYZ> ());
-//   norm_est.setSearchMethod (tree);
-//   norm_est.setKSearch (64);
-  
-//   norm_est.setInputCloud (cloud);
-//   norm_est.compute (*cloud_normals);
-
-//   std::vector<int> aux_indices;
-//   removeNaNFromPointCloud (*cloud_normals, *cloud_normals, aux_indices);
-//   removeNaNNormalsFromPointCloud (*cloud_normals, *cloud_normals, aux_indices);
-
-//   NormalSpaceSampling<PointNormal, PointNormal> normal_space_sampling;
-//   normal_space_sampling.setInputCloud (cloud_normals);
-//   normal_space_sampling.setNormals (cloud_normals);
-//   normal_space_sampling.setBins (4, 4, 4);
-//   normal_space_sampling.setSeed (0);
-//   normal_space_sampling.setSample (static_cast<unsigned int> (cloud_normals->size ()) / 4);
-
-//   IndicesPtr walls_indices (new std::vector<int> ());
-//   normal_space_sampling.filter (*walls_indices);
-  
-
-
-//   for(int i=0;i<walls_indices->size();i++)
-//   {
-//     output.push_back(PointXYZ(cloud_normals->points[walls_indices->at(i)].x,cloud_normals->points[walls_indices->at(i)].y,cloud_normals->points[walls_indices->at(i)].z));
-//   }
-
-// }

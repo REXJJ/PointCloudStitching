@@ -94,6 +94,8 @@ namespace filter
 		bool capture;
 
 		bool onCapturePointCloud(std_srvs::TriggerRequest& req, std_srvs::TriggerResponse& res);
+
+
 	};
 }  // namespace filter
 
